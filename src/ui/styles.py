@@ -22,6 +22,7 @@ class AppStyles:
         'light': '#f8f9fa',
         'dark': '#212529',
         'white': '#ffffff',
+        'background': '#ffffff',        # Ana background rengi
         'gray_50': '#fafafa',           # Yeni eklendi
         'gray_100': '#f8f9fa',
         'gray_200': '#e9ecef',

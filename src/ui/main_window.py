@@ -5,6 +5,10 @@ Modern ve kullanıcı dostu AI ToolBox
 
 import sys
 import os
+import time
+import importlib.util
+import random
+import cv2
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                             QHBoxLayout, QGridLayout, QPushButton, QLabel, 
                             QLineEdit, QSpinBox, QFileDialog, QProgressBar,
@@ -47,8 +51,8 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         """Kullanıcı arayüzünü başlat"""
         self.setWindowTitle("AI ToolBox v1.0.0")
-        self.setGeometry(100, 100, 1000, 700)
-        self.setMinimumSize(800, 600)
+        self.setGeometry(100, 100, 1400, 900)  # Daha büyük pencere boyutu
+        self.setMinimumSize(1200, 800)  # Minimum boyutu da arttır
         
         # Menü bar oluştur
         self.create_menu_bar()
@@ -91,6 +95,10 @@ class MainWindow(QMainWindow):
         # Image-TXT matcher sayfası
         matcher_page = self.create_image_txt_matcher_page()
         self.content_stack.addWidget(matcher_page)
+        
+        # Image augmentation sayfası
+        augment_page = self.create_image_augmentation_page()
+        self.content_stack.addWidget(augment_page)
         
         # Varsayılan olarak video frame extractor'ı göster
         self.current_tool = "video_extractor"
@@ -182,6 +190,11 @@ class MainWindow(QMainWindow):
         matcher_btn = self.create_menu_button("🖼️", "Resim-TXT Eşleştirme", "image_txt_matcher", False)
         self.menu_buttons["image_txt_matcher"] = matcher_btn
         layout.addWidget(matcher_btn)
+        
+        # Image Augmentation
+        augment_btn = self.create_menu_button("🎨", "Görüntü Augmentasyon", "image_augmentation", False)
+        self.menu_buttons["image_augmentation"] = augment_btn
+        layout.addWidget(augment_btn)
         
         # Ayırıcı
         separator = QFrame()
@@ -309,6 +322,10 @@ class MainWindow(QMainWindow):
             self.tool_title.setText("🖼️ Resim-TXT Eşleştirme")
             self.content_stack.setCurrentIndex(2)  # Image-TXT matcher sayfası
             self.statusBar().showMessage("Resim-TXT Eşleştirme aracı aktif", 2000)
+        elif tool_id == "image_augmentation":
+            self.tool_title.setText("🎨 Görüntü Augmentasyon")
+            self.content_stack.setCurrentIndex(3)  # Image augmentation sayfası
+            self.statusBar().showMessage("Görüntü Augmentasyon aracı aktif", 2000)
         elif tool_id == "about":
             self.show_about()
             # About'tan sonra önceki aracı aktif tut
@@ -370,6 +387,331 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.matcher_widget)
         
         return page
+    
+    def create_image_augmentation_page(self):
+        """Görüntü augmentasyon sayfasını oluştur"""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setSpacing(20)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Image augmentation widget'ını oluştur
+        self.augment_widget = self.create_image_augmentation_widget()
+        layout.addWidget(self.augment_widget)
+        
+        return page
+    
+    def create_image_augmentation_widget(self):
+        """Görüntü augmentasyon widget'ını oluştur"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(30)  # Spacing'i arttır
+        layout.setContentsMargins(20, 20, 20, 20)  # Margin'leri ekle
+        
+        # Kaynak ve hedef klasörler
+        folders_group = QGroupBox("📁 Klasör Ayarları")
+        folders_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                font-size: 16px;
+                color: {AppStyles.COLORS['text']};
+                border: 2px solid {AppStyles.COLORS['border']};
+                border-radius: 10px;
+                margin-top: 15px;
+                padding-top: 15px;
+                min-height: 120px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 15px;
+                padding: 0 15px 0 15px;
+            }}
+        """)
+        
+        folders_layout = QVBoxLayout(folders_group)
+        
+        # Kaynak klasör
+        source_layout = QHBoxLayout()
+        source_label = QLabel("Kaynak Klasör:")
+        source_label.setFixedWidth(100)
+        
+        self.augment_source_input = QLineEdit()
+        self.augment_source_input.setPlaceholderText("Augmentasyon uygulanacak resimlerin klasörü...")
+        self.augment_source_input.setStyleSheet(AppStyles.get_input_style())
+        
+        self.augment_source_btn = QPushButton("📁 Gözat")
+        self.augment_source_btn.setStyleSheet(AppStyles.get_button_style())
+        self.augment_source_btn.clicked.connect(self.browse_augment_source)
+        
+        source_layout.addWidget(source_label)
+        source_layout.addWidget(self.augment_source_input)
+        source_layout.addWidget(self.augment_source_btn)
+        folders_layout.addLayout(source_layout)
+        
+        # Hedef klasör
+        target_layout = QHBoxLayout()
+        target_label = QLabel("Hedef Klasör:")
+        target_label.setFixedWidth(100)
+        
+        self.augment_target_input = QLineEdit()
+        self.augment_target_input.setPlaceholderText("Augmentasyon sonuçlarının kaydedileceği klasör...")
+        self.augment_target_input.setStyleSheet(AppStyles.get_input_style())
+        
+        self.augment_target_btn = QPushButton("📁 Gözat")
+        self.augment_target_btn.setStyleSheet(AppStyles.get_button_style())
+        self.augment_target_btn.clicked.connect(self.browse_augment_target)
+        
+        target_layout.addWidget(target_label)
+        target_layout.addWidget(self.augment_target_input)
+        target_layout.addWidget(self.augment_target_btn)
+        folders_layout.addLayout(target_layout)
+        
+        layout.addWidget(folders_group)
+        
+        # Augmentasyon efektleri seçimi
+        effects_group = QGroupBox("🎨 Augmentasyon Efektleri")
+        effects_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                font-size: 16px;
+                color: {AppStyles.COLORS['text']};
+                border: 2px solid {AppStyles.COLORS['border']};
+                border-radius: 10px;
+                margin-top: 15px;
+                padding-top: 20px;
+                min-height: 300px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 15px;
+                padding: 0 15px 0 15px;
+            }}
+        """)
+        
+        effects_layout = QVBoxLayout(effects_group)
+        
+        # Efekt checkboxları - 3 sütun halinde
+        self.effect_checkboxes = {}
+        
+        # Automold efektleri
+        effects_data = [
+            ("random_brightness", "🔆 Rastgele Parlaklık", "Görüntü parlaklığını rastgele değiştirir"),
+            ("add_shadow", "🌑 Gölge Ekleme", "Görüntüye rastgele gölgeler ekler"),
+            ("add_snow", "❄️ Kar Efekti", "Kar yağışı efekti ekler"),
+            ("add_rain", "🌧️ Yağmur Efekti", "Yağmur damlacıkları ekler"),
+            ("add_fog", "🌫️ Sis Efekti", "Sisli hava koşulları simüle eder"),
+            ("add_gravel", "🪨 Çakıl Taşı", "Yol yüzeyine çakıl taşları ekler"),
+            ("add_sun_flare", "☀️ Güneş Parıltısı", "Güneş ışığı parıltısı efekti"),
+            ("add_speed", "💨 Hız Bulanıklığı", "Hareket bulanıklığı efekti"),
+            ("add_autumn", "🍂 Sonbahar Renkleri", "Sonbahar renk tonlarını uygular"),
+            ("random_flip", "🔄 Rastgele Çevirme", "Görüntüyü rastgele çevirir"),
+            # ("add_manhole", "🕳️ Rögar Kapağı", "Yol yüzeyine rögar kapağı ekler"),  # Geçici olarak devre dışı
+            ("correct_exposure", "📸 Pozlama Düzeltme", "Görüntü pozlamasını iyileştirir")
+        ]
+        
+        # 3 sütunlu grid layout
+        grid_layout = QGridLayout()
+        grid_layout.setSpacing(15)  # Grid elemanları arası boşluğu arttır
+        grid_layout.setContentsMargins(20, 20, 20, 20)  # Margin'leri arttır
+        
+        for i, (effect_key, effect_name, effect_desc) in enumerate(effects_data):
+            row = i // 3
+            col = i % 3
+            
+            checkbox = QCheckBox(effect_name)
+            checkbox.setToolTip(effect_desc)
+            checkbox.setStyleSheet(f"""
+                QCheckBox {{
+                    color: {AppStyles.COLORS['text']};
+                    font-size: 14px;
+                    spacing: 10px;
+                    padding: 8px;
+                    min-height: 30px;
+                }}
+                QCheckBox::indicator {{
+                    width: 20px;
+                    height: 20px;
+                    margin-right: 8px;
+                }}
+                QCheckBox::indicator:unchecked {{
+                    border: 2px solid {AppStyles.COLORS['border']};
+                    border-radius: 4px;
+                    background-color: {AppStyles.COLORS['background']};
+                }}
+                QCheckBox::indicator:checked {{
+                    border: 2px solid {AppStyles.COLORS['primary']};
+                    border-radius: 4px;
+                    background-color: {AppStyles.COLORS['primary']};
+                    image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAiIGhlaWdodD0iMTAiIHZpZXdCb3g9IjAgMCAxMCAxMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEuNSA1TDQuNSA4TDguNSAyIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgo8L3N2Zz4K);
+                }}
+            """)
+            
+            self.effect_checkboxes[effect_key] = checkbox
+            grid_layout.addWidget(checkbox, row, col)
+        
+        # Grid layout'u center'a hizala
+        grid_widget = QWidget()
+        grid_widget.setLayout(grid_layout)
+        
+        # Grid'i effects_layout'a ekle
+        effects_layout.addWidget(grid_widget)
+        
+        # Hızlı seçim butonları
+        quick_select_layout = QHBoxLayout()
+        quick_select_layout.setSpacing(15)  # Buton arası boşluğu arttır
+        quick_select_layout.setContentsMargins(20, 15, 20, 15)
+        
+        select_all_btn = QPushButton("✅ Tümünü Seç")
+        select_all_btn.setStyleSheet(AppStyles.get_button_style())
+        select_all_btn.clicked.connect(self.select_all_effects)
+        
+        clear_all_btn = QPushButton("❌ Tümünü Temizle")
+        clear_all_btn.setStyleSheet(AppStyles.get_button_style())
+        clear_all_btn.clicked.connect(self.clear_all_effects)
+        
+        weather_effects_btn = QPushButton("🌦️ Hava Durumu")
+        weather_effects_btn.setStyleSheet(AppStyles.get_button_style())
+        weather_effects_btn.clicked.connect(self.select_weather_effects)
+        
+        road_effects_btn = QPushButton("🛣️ Yol Efektleri")
+        road_effects_btn.setStyleSheet(AppStyles.get_button_style())
+        road_effects_btn.clicked.connect(self.select_road_effects)
+        
+        quick_select_layout.addWidget(select_all_btn)
+        quick_select_layout.addWidget(clear_all_btn)
+        quick_select_layout.addWidget(weather_effects_btn)
+        quick_select_layout.addWidget(road_effects_btn)
+        quick_select_layout.addStretch()
+        
+        effects_layout.addLayout(quick_select_layout)
+        layout.addWidget(effects_group)
+        
+        # İşlem ayarları
+        settings_group = QGroupBox("⚙️ İşlem Ayarları")
+        settings_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                font-size: 16px;
+                color: {AppStyles.COLORS['text']};
+                border: 2px solid {AppStyles.COLORS['border']};
+                border-radius: 10px;
+                margin-top: 15px;
+                padding-top: 15px;
+                min-height: 120px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 15px;
+                padding: 0 15px 0 15px;
+            }}
+        """)
+        
+        settings_layout = QVBoxLayout(settings_group)
+        
+        # Resim formatları ve işlem modu
+        settings_row1 = QHBoxLayout()
+        
+        formats_label = QLabel("Resim Formatları:")
+        self.augment_formats_input = QLineEdit("jpg,jpeg,png,bmp")
+        self.augment_formats_input.setPlaceholderText("jpg,jpeg,png,bmp")
+        self.augment_formats_input.setStyleSheet(AppStyles.get_input_style())
+        
+        mode_label = QLabel("İşlem Modu:")
+        self.augment_mode_combo = QComboBox()
+        self.augment_mode_combo.addItems(["Her efekt için ayrı dosya", "Rastgele bir efekt uygula"])
+        self.augment_mode_combo.setStyleSheet(AppStyles.get_input_style())
+        
+        settings_row1.addWidget(formats_label)
+        settings_row1.addWidget(self.augment_formats_input)
+        settings_row1.addWidget(mode_label)
+        settings_row1.addWidget(self.augment_mode_combo)
+        
+        settings_layout.addLayout(settings_row1)
+        
+        # Alt dizinler ve isim prefix
+        settings_row2 = QHBoxLayout()
+        
+        self.augment_subdirs_cb = QCheckBox("Alt dizinleri de işle")
+        self.augment_subdirs_cb.setChecked(True)
+        
+        prefix_label = QLabel("Dosya Öneki:")
+        self.augment_prefix_input = QLineEdit("aug_")
+        self.augment_prefix_input.setPlaceholderText("aug_")
+        self.augment_prefix_input.setStyleSheet(AppStyles.get_input_style())
+        self.augment_prefix_input.setFixedWidth(100)
+        
+        settings_row2.addWidget(self.augment_subdirs_cb)
+        settings_row2.addStretch()
+        settings_row2.addWidget(prefix_label)
+        settings_row2.addWidget(self.augment_prefix_input)
+        
+        settings_layout.addLayout(settings_row2)
+        layout.addWidget(settings_group)
+        
+        # İşlem butonları
+        buttons_layout = QHBoxLayout()
+        
+        self.augment_preview_btn = QPushButton("👁️ Önizleme")
+        self.augment_preview_btn.setStyleSheet(AppStyles.get_button_style())
+        self.augment_preview_btn.clicked.connect(self.preview_augmentation)
+        self.augment_preview_btn.setEnabled(False)
+        
+        self.augment_process_btn = QPushButton("🎨 Augmentasyon Uygula")
+        self.augment_process_btn.setStyleSheet(AppStyles.get_primary_button_style())
+        self.augment_process_btn.clicked.connect(self.process_augmentation)
+        self.augment_process_btn.setEnabled(False)
+        
+        buttons_layout.addWidget(self.augment_preview_btn)
+        buttons_layout.addWidget(self.augment_process_btn)
+        buttons_layout.addStretch()
+        
+        layout.addLayout(buttons_layout)
+        
+        # Sonuçlar bölümü
+        results_group = QGroupBox("📊 İşlem Sonuçları")
+        results_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                font-size: 16px;
+                color: {AppStyles.COLORS['text']};
+                border: 2px solid {AppStyles.COLORS['border']};
+                border-radius: 10px;
+                margin-top: 15px;
+                padding-top: 15px;
+                min-height: 250px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 15px;
+                padding: 0 15px 0 15px;
+            }}
+        """)
+        
+        results_layout = QVBoxLayout(results_group)
+        
+        self.augment_results_text = QTextEdit()
+        self.augment_results_text.setPlaceholderText("İşlem sonuçları burada görünecek...")
+        self.augment_results_text.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {AppStyles.COLORS['gray_100']};
+                border: 1px solid {AppStyles.COLORS['border']};
+                border-radius: 8px;
+                padding: 15px;
+                font-family: {AppStyles.FONTS['family_mono']};
+                font-size: 13px;
+                color: {AppStyles.COLORS['text']};
+            }}
+        """)
+        self.augment_results_text.setMinimumHeight(300)  # Minimum yüksekliği arttır
+        
+        results_layout.addWidget(self.augment_results_text)
+        layout.addWidget(results_group)
+        
+        # Input değişikliklerini dinle
+        self.augment_source_input.textChanged.connect(self.on_augment_folders_changed)
+        self.augment_target_input.textChanged.connect(self.on_augment_folders_changed)
+        
+        return widget
     
     def create_image_txt_matcher_widget(self):
         """Resim-TXT eşleştirme widget'ını oluştur"""
@@ -1615,3 +1957,373 @@ Mevcut Araçlar:
 • Modern ve kullanıcı dostu arayüz
 
 © 2025 AI ToolBox""")
+    
+    # =====================================
+    # AUGMENTASYON METODLARI
+    # =====================================
+    
+    def browse_augment_source(self):
+        """Augmentasyon kaynak klasörünü seç"""
+        folder = QFileDialog.getExistingDirectory(
+            self, 
+            "Augmentasyon Kaynak Klasörü Seç", 
+            self.augment_source_input.text() or os.path.expanduser("~")
+        )
+        if folder:
+            self.augment_source_input.setText(folder)
+    
+    def browse_augment_target(self):
+        """Augmentasyon hedef klasörünü seç"""
+        folder = QFileDialog.getExistingDirectory(
+            self, 
+            "Augmentasyon Hedef Klasörü Seç", 
+            self.augment_target_input.text() or os.path.expanduser("~")
+        )
+        if folder:
+            self.augment_target_input.setText(folder)
+    
+    def on_augment_folders_changed(self):
+        """Augmentasyon klasör inputları değiştiğinde tetiklenir"""
+        source_valid = os.path.isdir(self.augment_source_input.text())
+        target_valid = self.augment_target_input.text().strip() != ""
+        
+        can_process = source_valid and target_valid
+        self.augment_preview_btn.setEnabled(can_process)
+        self.augment_process_btn.setEnabled(can_process)
+    
+    def select_all_effects(self):
+        """Tüm efektleri seç"""
+        for checkbox in self.effect_checkboxes.values():
+            checkbox.setChecked(True)
+    
+    def clear_all_effects(self):
+        """Tüm efekt seçimlerini temizle"""
+        for checkbox in self.effect_checkboxes.values():
+            checkbox.setChecked(False)
+    
+    def select_weather_effects(self):
+        """Hava durumu efektlerini seç"""
+        weather_effects = ['add_snow', 'add_rain', 'add_fog', 'add_sun_flare']
+        self.clear_all_effects()
+        for effect in weather_effects:
+            if effect in self.effect_checkboxes:
+                self.effect_checkboxes[effect].setChecked(True)
+    
+    def select_road_effects(self):
+        """Yol efektlerini seç"""
+        road_effects = ['add_gravel', 'add_speed']  # manhole geçici olarak kaldırıldı
+        self.clear_all_effects()
+        for effect in road_effects:
+            if effect in self.effect_checkboxes:
+                self.effect_checkboxes[effect].setChecked(True)
+    
+    def get_selected_effects(self):
+        """Seçili efektlerin listesini döndür"""
+        selected = []
+        for effect_key, checkbox in self.effect_checkboxes.items():
+            if checkbox.isChecked():
+                selected.append(effect_key)
+        return selected
+    
+    def get_image_files(self, folder_path, formats, include_subdirs=True):
+        """Belirtilen klasörden resim dosyalarını al"""
+        image_files = []
+        format_list = [f.strip().lower() for f in formats.split(',')]
+        
+        if include_subdirs:
+            for root, dirs, files in os.walk(folder_path):
+                for file in files:
+                    if any(file.lower().endswith(f'.{fmt}') for fmt in format_list):
+                        image_files.append(os.path.join(root, file))
+        else:
+            for file in os.listdir(folder_path):
+                file_path = os.path.join(folder_path, file)
+                if os.path.isfile(file_path) and any(file.lower().endswith(f'.{fmt}') for fmt in format_list):
+                    image_files.append(file_path)
+        
+        return image_files
+    
+    def preview_augmentation(self):
+        """Augmentasyon önizlemesi göster"""
+        try:
+            source_folder = self.augment_source_input.text()
+            formats = self.augment_formats_input.text()
+            include_subdirs = self.augment_subdirs_cb.isChecked()
+            selected_effects = self.get_selected_effects()
+            
+            if not selected_effects:
+                QMessageBox.warning(self, "Uyarı", "Lütfen en az bir efekt seçin!")
+                return
+            
+            # Resim dosyalarını al
+            image_files = self.get_image_files(source_folder, formats, include_subdirs)
+            
+            if not image_files:
+                QMessageBox.warning(self, "Uyarı", "Belirtilen klasörde resim dosyası bulunamadı!")
+                return
+            
+            # Önizleme metni oluştur
+            preview_text = f"""📊 AUGMENTASYON ÖNİZLEMESİ
+            
+📁 Kaynak Klasör: {source_folder}
+📁 Hedef Klasör: {self.augment_target_input.text()}
+🔍 Resim Formatları: {formats}
+📂 Alt Dizinler: {'Evet' if include_subdirs else 'Hayır'}
+🎨 Seçili Efektler: {len(selected_effects)} adet
+
+🖼️ Bulunan Resimler: {len(image_files)} adet
+
+📋 Uygulanacak Efektler:
+"""
+            
+            for effect in selected_effects:
+                effect_names = {
+                    'random_brightness': '🔆 Rastgele Parlaklık',
+                    'add_shadow': '🌑 Gölge Ekleme',
+                    'add_snow': '❄️ Kar Efekti',
+                    'add_rain': '🌧️ Yağmur Efekti',
+                    'add_fog': '🌫️ Sis Efekti',
+                    'add_gravel': '🪨 Çakıl Taşı',
+                    'add_sun_flare': '☀️ Güneş Parıltısı',
+                    'add_speed': '💨 Hız Bulanıklığı',
+                    'add_autumn': '🍂 Sonbahar Renkleri',
+                    'random_flip': '🔄 Rastgele Çevirme',
+                    'add_manhole': '🕳️ Rögar Kapağı',
+                    'correct_exposure': '📸 Pozlama Düzeltme'
+                }
+                preview_text += f"  • {effect_names.get(effect, effect)}\n"
+            
+            mode = self.augment_mode_combo.currentText()
+            if mode == "Her efekt için ayrı dosya":
+                total_files = len(image_files) * len(selected_effects)
+                preview_text += f"\n📈 Üretilecek Toplam Dosya: {total_files} adet"
+            else:
+                preview_text += f"\n📈 Üretilecek Toplam Dosya: {len(image_files)} adet (her resim için rastgele 1 efekt)"
+            
+            # Önizlemeyi sonuçlar alanında göster
+            self.augment_results_text.setPlainText(preview_text)
+            
+            QMessageBox.information(self, "Önizleme", "Önizleme hazırlandı! Sonuçlar bölümünde detayları görebilirsiniz.")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", f"Önizleme oluşturulurken hata oluştu:\n{str(e)}")
+            app_logger.error(f"Augmentasyon önizleme hatası: {str(e)}")
+    
+    def process_augmentation(self):
+        """Augmentasyon işlemini başlat"""
+        try:
+            source_folder = self.augment_source_input.text()
+            target_folder = self.augment_target_input.text()
+            formats = self.augment_formats_input.text()
+            include_subdirs = self.augment_subdirs_cb.isChecked()
+            selected_effects = self.get_selected_effects()
+            mode = self.augment_mode_combo.currentText()
+            prefix = self.augment_prefix_input.text()
+            
+            if not selected_effects:
+                QMessageBox.warning(self, "Uyarı", "Lütfen en az bir efekt seçin!")
+                return
+            
+            # Hedef klasörü oluştur
+            os.makedirs(target_folder, exist_ok=True)
+            
+            # Resim dosyalarını al
+            image_files = self.get_image_files(source_folder, formats, include_subdirs)
+            
+            if not image_files:
+                QMessageBox.warning(self, "Uyarı", "Belirtilen klasörde resim dosyası bulunamadı!")
+                return
+            
+            # Onay penceresi
+            total_files = len(image_files) * len(selected_effects) if mode == "Her efekt için ayrı dosya" else len(image_files)
+            reply = QMessageBox.question(
+                self,
+                "Onay",
+                f"🎨 {len(image_files)} resime augmentasyon uygulanacak.\n"
+                f"📈 Toplam {total_files} dosya oluşturulacak.\n\n"
+                f"Devam etmek istiyor musunuz?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply != QMessageBox.Yes:
+                return
+            
+            # İşlemi başlat
+            self.run_augmentation_process(image_files, target_folder, selected_effects, mode, prefix)
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", f"Augmentasyon işlemi başlatılırken hata oluştu:\n{str(e)}")
+            app_logger.error(f"Augmentasyon işlem başlatma hatası: {str(e)}")
+    
+    def run_augmentation_process(self, image_files, target_folder, selected_effects, mode, prefix):
+        """Augmentasyon işlemini çalıştır"""
+        try:
+            # Automold'u import et
+            from ..core import Automold as am
+        except ImportError:
+            try:
+                # Alternatif import yolu
+                sys.path.append(os.path.join(os.path.dirname(__file__), "..", "core"))
+                import Automold as am
+            except Exception as e:
+                QMessageBox.critical(self, "Hata", f"Automold modülü yüklenemedi:\n{str(e)}")
+                return
+        
+        total_processed = 0
+        total_errors = 0
+        error_files = []
+        
+        # İşlem başlangıcı
+        start_time = time.time()
+        self.augment_results_text.setPlainText("🎨 Augmentasyon işlemi başlıyor...\n")
+        
+        try:
+            for i, image_path in enumerate(image_files):
+                try:
+                    # Resmi yükle
+                    image = cv2.imread(image_path)
+                    if image is None:
+                        raise ValueError(f"Resim yüklenemedi: {image_path}")
+                    
+                    # RGB'ye çevir (OpenCV BGR kullanır)
+                    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                    
+                    # Dosya adı ve uzantısını al
+                    base_name = os.path.splitext(os.path.basename(image_path))[0]
+                    ext = os.path.splitext(image_path)[1]
+                    
+                    # Efektleri uygula
+                    if mode == "Her efekt için ayrı dosya":
+                        # Her efekt için ayrı dosya oluştur
+                        for effect in selected_effects:
+                            try:
+                                augmented_image = self.apply_augmentation_effect(image_rgb.copy(), effect, am)
+                                
+                                # Kaydet
+                                output_filename = f"{prefix}{base_name}_{effect}{ext}"
+                                output_path = os.path.join(target_folder, output_filename)
+                                
+                                # BGR'ye çevir ve kaydet
+                                augmented_bgr = cv2.cvtColor(augmented_image, cv2.COLOR_RGB2BGR)
+                                cv2.imwrite(output_path, augmented_bgr)
+                                total_processed += 1
+                                
+                            except Exception as e:
+                                total_errors += 1
+                                error_msg = f"Efekt '{effect}' uygulanırken hata: {str(e)}"
+                                error_files.append(f"{image_path} -> {effect}: {error_msg}")
+                                app_logger.error(error_msg)
+                    else:
+                        # Rastgele bir efekt uygula
+                        effect = random.choice(selected_effects)
+                        try:
+                            augmented_image = self.apply_augmentation_effect(image_rgb.copy(), effect, am)
+                            
+                            # Kaydet
+                            output_filename = f"{prefix}{base_name}_{effect}{ext}"
+                            output_path = os.path.join(target_folder, output_filename)
+                            
+                            # BGR'ye çevir ve kaydet
+                            augmented_bgr = cv2.cvtColor(augmented_image, cv2.COLOR_RGB2BGR)
+                            cv2.imwrite(output_path, augmented_bgr)
+                            total_processed += 1
+                            
+                        except Exception as e:
+                            total_errors += 1
+                            error_msg = f"Efekt '{effect}' uygulanırken hata: {str(e)}"
+                            error_files.append(f"{image_path} -> {effect}: {error_msg}")
+                            app_logger.error(error_msg)
+                    
+                    # İlerleme göster
+                    if (i + 1) % 10 == 0:
+                        progress_text = f"İşlenen: {i + 1}/{len(image_files)} resim\n"
+                        progress_text += f"Başarılı: {total_processed} dosya\n"
+                        if total_errors > 0:
+                            progress_text += f"Hata: {total_errors} dosya\n"
+                        
+                        current_text = self.augment_results_text.toPlainText()
+                        self.augment_results_text.setPlainText(current_text + progress_text)
+                        QApplication.processEvents()  # UI'yi güncelle
+                
+                except Exception as e:
+                    total_errors += 1
+                    error_msg = f"Resim işlenirken hata ({image_path}): {str(e)}"
+                    error_files.append(error_msg)
+                    app_logger.error(error_msg)
+            
+            # İşlem sonu raporu
+            end_time = time.time()
+            duration = end_time - start_time
+            
+            report = f"""
+🎉 AUGMENTASYON İŞLEMİ TAMAMLANDI!
+
+📊 İşlem Özeti:
+• İşlenen Resim: {len(image_files)} adet
+• Başarılı Dosya: {total_processed} adet
+• Hatalı İşlem: {total_errors} adet
+• İşlem Süresi: {duration:.2f} saniye
+• Hedef Klasör: {target_folder}
+
+"""
+            
+            if error_files:
+                report += "❌ Hatalar:\n"
+                for error in error_files[:10]:  # İlk 10 hatayı göster
+                    report += f"  • {error}\n"
+                if len(error_files) > 10:
+                    report += f"  ... ve {len(error_files) - 10} hata daha\n"
+            
+            self.augment_results_text.setPlainText(report)
+            
+            if total_errors == 0:
+                QMessageBox.information(self, "Başarılı", f"✅ {total_processed} dosya başarıyla oluşturuldu!")
+            else:
+                QMessageBox.warning(
+                    self, 
+                    "Kısmi Başarı", 
+                    f"✅ {total_processed} dosya oluşturuldu\n❌ {total_errors} işlemde hata oluştu\n\nDetaylar için sonuçlar bölümüne bakın."
+                )
+            
+            self.statusBar().showMessage(f"Augmentasyon tamamlandı: {total_processed} dosya", 5000)
+            
+        except Exception as e:
+            error_msg = f"Augmentasyon işlemi genel hatası: {str(e)}"
+            self.augment_results_text.setPlainText(f"❌ {error_msg}")
+            QMessageBox.critical(self, "Hata", error_msg)
+            app_logger.error(error_msg)
+    
+    def apply_augmentation_effect(self, image, effect_name, automold_module):
+        """Belirtilen efekti resme uygula"""
+        try:
+            if effect_name == "random_brightness":
+                return automold_module.random_brightness(image)
+            elif effect_name == "add_shadow":
+                return automold_module.add_shadow(image)
+            elif effect_name == "add_snow":
+                return automold_module.add_snow(image)
+            elif effect_name == "add_rain":
+                return automold_module.add_rain(image)
+            elif effect_name == "add_fog":
+                return automold_module.add_fog(image)
+            elif effect_name == "add_gravel":
+                return automold_module.add_gravel(image)
+            elif effect_name == "add_sun_flare":
+                return automold_module.add_sun_flare(image)
+            elif effect_name == "add_speed":
+                return automold_module.add_speed(image)
+            elif effect_name == "add_autumn":
+                return automold_module.add_autumn(image)
+            elif effect_name == "random_flip":
+                return automold_module.random_flip(image)
+            # elif effect_name == "add_manhole":  # Geçici olarak devre dışı
+            #     return automold_module.add_manhole(image)
+            elif effect_name == "correct_exposure":
+                return automold_module.correct_exposure(image)
+            else:
+                raise ValueError(f"Bilinmeyen efekt: {effect_name}")
+                
+        except Exception as e:
+            app_logger.error(f"Efekt uygulama hatası ({effect_name}): {str(e)}")
+            raise
