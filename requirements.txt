@@ -1,0 +1,14 @@
+# AI ToolBox - Dependencies
+# Temel kütüphaneler
+PyQt5==5.15.9
+opencv-python==4.8.1.78
+
+# İsteğe bağlı kütüphaneler (gelecek özellikler için)
+# pillow>=9.0.0
+# numpy>=1.21.0
+# matplotlib>=3.5.0
+
+# Geliştirme araçları (development için)
+# pytest>=7.0.0
+# black>=22.0.0
+# flake8>=4.0.0
