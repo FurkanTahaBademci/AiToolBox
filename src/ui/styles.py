@@ -31,7 +31,11 @@ class AppStyles:
         'gray_600': '#6c757d',
         'gray_700': '#495057',
         'gray_800': '#343a40',
-        'gray_900': '#212529'
+        'gray_900': '#212529',
+        'hover': '#f0f2f5',            # Hover background color
+        'surface': '#f8f9fa',          # Surface background
+        'border': '#dee2e6',           # Border color
+        'text': '#212529'              # Primary text color
     }
     
     # Font ayarları
@@ -368,4 +372,56 @@ class AppStyles:
             {AppStyles.get_input_style()}
             {AppStyles.get_progress_bar_style()}
             {AppStyles.get_text_edit_style()}
+        """
+    
+    @staticmethod
+    def get_button_style():
+        """Normal buton stili"""
+        return f"""
+            QPushButton {{
+                background-color: {AppStyles.COLORS['gray_200']};
+                color: {AppStyles.COLORS['text']};
+                border: 1px solid {AppStyles.COLORS['border']};
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-family: {AppStyles.FONTS['family_primary']};
+                font-size: 13px;
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                background-color: {AppStyles.COLORS['gray_300']};
+            }}
+            QPushButton:pressed {{
+                background-color: {AppStyles.COLORS['gray_400']};
+            }}
+            QPushButton:disabled {{
+                background-color: {AppStyles.COLORS['gray_100']};
+                color: {AppStyles.COLORS['gray_500']};
+            }}
+        """
+    
+    @staticmethod
+    def get_primary_button_style():
+        """Ana (primary) buton stili"""
+        return f"""
+            QPushButton {{
+                background-color: {AppStyles.COLORS['primary']};
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-family: {AppStyles.FONTS['family_primary']};
+                font-size: 13px;
+                font-weight: 600;
+            }}
+            QPushButton:hover {{
+                background-color: {AppStyles.COLORS['primary_hover']};
+            }}
+            QPushButton:pressed {{
+                background-color: {AppStyles.COLORS['primary_pressed']};
+            }}
+            QPushButton:disabled {{
+                background-color: {AppStyles.COLORS['gray_300']};
+                color: {AppStyles.COLORS['gray_500']};
+            }}
         """

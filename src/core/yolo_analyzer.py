@@ -47,18 +47,23 @@ class YoloAnalyzer:
         for txt_file in txt_files:
             try:
                 objects = self.parse_yolo_file(txt_file)
-                self.file_counts[os.path.basename(txt_file)] = len(objects)
+                filename = os.path.basename(txt_file)
+                self.file_counts[filename] = len(objects)
                 
                 for class_id, _, _, _, _ in objects:
                     self.class_counts[class_id] += 1
                     self.total_objects += 1
                     
             except Exception as e:
+                filename = os.path.basename(txt_file)
+                error_msg = str(e)
                 self.error_files.append({
-                    'file': os.path.basename(txt_file),
-                    'error': str(e)
+                    'file': filename,
+                    'error': error_msg
                 })
-                app_logger.error(f"Dosya analiz hatası {txt_file}: {e}")
+                # Hata dosyasını 0 nesne ile kaydet ki analiz devam etsin
+                self.file_counts[filename] = 0
+                app_logger.warning(f"Dosya analiz uyarısı {filename}: {error_msg} - Analiz devam ediyor")
         
         self.total_files = len(txt_files)
         app_logger.info(f"YOLO analizi tamamlandı: {self.total_objects} nesne, {len(self.error_files)} hata")

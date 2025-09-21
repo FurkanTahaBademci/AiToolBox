@@ -8,7 +8,8 @@ import os
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                             QHBoxLayout, QGridLayout, QPushButton, QLabel, 
                             QLineEdit, QSpinBox, QFileDialog, QProgressBar,
-                            QGroupBox, QFrame, QMessageBox, QTextEdit, QSplitter, QComboBox, QAction)
+                            QGroupBox, QFrame, QMessageBox, QTextEdit, QSplitter, 
+                            QComboBox, QAction, QStackedWidget)
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap
 
@@ -55,32 +56,44 @@ class MainWindow(QMainWindow):
         # Ana widget ve layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setSpacing(20)
-        main_layout.setContentsMargins(25, 25, 25, 25)
+        main_layout = QHBoxLayout(central_widget)
+        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Sol sidebar menü
+        self.sidebar = self.create_sidebar()
+        main_layout.addWidget(self.sidebar)
+        
+        # Ana içerik alanı
+        self.main_content = QWidget()
+        main_layout.addWidget(self.main_content)
+        
+        # Ana içerik layout'ı
+        content_layout = QVBoxLayout(self.main_content)
+        content_layout.setSpacing(20)
+        content_layout.setContentsMargins(25, 25, 25, 25)
         
         # Başlık alanı
-        self.create_header(main_layout)
+        self.create_header(content_layout)
         
-        # Ana içerik alanı (splitter ile böl)
-        content_splitter = QSplitter(Qt.Horizontal)
+        # Ana içerik alanı için stacked widget
+        self.content_stack = QStackedWidget()
+        content_layout.addWidget(self.content_stack)
         
-        # Sol panel (kontroller)
-        left_panel = self.create_left_panel()
-        content_splitter.addWidget(left_panel)
+        # Video extractor sayfası
+        video_page = self.create_video_extractor_page()
+        self.content_stack.addWidget(video_page)
         
-        # Sağ panel (info ve log)
-        right_panel = self.create_right_panel()
-        content_splitter.addWidget(right_panel)
+        # YOLO analyzer sayfası
+        yolo_page = self.create_yolo_analyzer_page()
+        self.content_stack.addWidget(yolo_page)
         
-        # Splitter oranları
-        content_splitter.setStretchFactor(0, 3)  # Sol panel daha geniş
-        content_splitter.setStretchFactor(1, 2)  # Sağ panel (log alanı) daha geniş
-        
-        main_layout.addWidget(content_splitter)
+        # Varsayılan olarak video frame extractor'ı göster
+        self.current_tool = "video_extractor"
+        self.content_stack.setCurrentIndex(0)
         
         # Alt kontrol çubuğu
-        self.create_bottom_controls(main_layout)
+        self.create_bottom_controls(content_layout)
     
     def create_menu_bar(self):
         """Menü barını oluştur"""
@@ -107,27 +120,491 @@ class MainWindow(QMainWindow):
         about_action = help_menu.addAction('ℹ️ Hakkında')
         about_action.triggered.connect(self.show_about)
     
+    def create_sidebar(self):
+        """Sol sidebar menüyü oluştur"""
+        sidebar = QWidget()
+        sidebar.setFixedWidth(250)
+        sidebar.setStyleSheet(f"""
+            QWidget {{
+                background-color: {AppStyles.COLORS['surface']};
+                border-right: 2px solid {AppStyles.COLORS['border']};
+            }}
+        """)
+        
+        layout = QVBoxLayout(sidebar)
+        layout.setSpacing(5)
+        layout.setContentsMargins(15, 20, 15, 20)
+        
+        # Başlık
+        title = QLabel("🤖 AI ToolBox")
+        title.setStyleSheet(f"""
+            QLabel {{
+                color: {AppStyles.COLORS['primary']};
+                font-size: 18px;
+                font-weight: bold;
+                margin-bottom: 20px;
+                padding: 10px;
+            }}
+        """)
+        layout.addWidget(title)
+        
+        # Araçlar başlığı
+        tools_label = QLabel("ARAÇLAR")
+        tools_label.setStyleSheet(f"""
+            QLabel {{
+                color: {AppStyles.COLORS['gray_500']};
+                font-size: 11px;
+                font-weight: bold;
+                margin: 20px 0 10px 0;
+                padding-left: 5px;
+            }}
+        """)
+        layout.addWidget(tools_label)
+        
+        # Menü butonları
+        self.menu_buttons = {}
+        
+        # Video Frame Extractor
+        video_btn = self.create_menu_button("🎬", "Video Frame Çıkarma", "video_extractor", True)
+        self.menu_buttons["video_extractor"] = video_btn
+        layout.addWidget(video_btn)
+        
+        # YOLO Analyzer
+        yolo_btn = self.create_menu_button("🎯", "YOLO Format Analizi", "yolo_analyzer", False)
+        self.menu_buttons["yolo_analyzer"] = yolo_btn
+        layout.addWidget(yolo_btn)
+        
+        # Ayırıcı
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        separator.setStyleSheet(f"QFrame {{ color: {AppStyles.COLORS['border']}; }}")
+        layout.addWidget(separator)
+        
+        # Ayarlar ve yardım
+        settings_label = QLabel("AYARLAR")
+        settings_label.setStyleSheet(f"""
+            QLabel {{
+                color: {AppStyles.COLORS['gray_500']};
+                font-size: 11px;
+                font-weight: bold;
+                margin: 20px 0 10px 0;
+                padding-left: 5px;
+            }}
+        """)
+        layout.addWidget(settings_label)
+        
+        # Hakkında
+        about_btn = self.create_menu_button("❓", "Hakkında", "about", False)
+        layout.addWidget(about_btn)
+        
+        layout.addStretch()
+        return sidebar
+    
+    def create_menu_button(self, icon, text, tool_id, is_active=False):
+        """Menü butonu oluştur"""
+        btn = QPushButton(f"{icon}  {text}")
+        btn.setFixedHeight(45)
+        btn.setCursor(Qt.PointingHandCursor)
+        
+        active_style = f"""
+            QPushButton {{
+                background-color: {AppStyles.COLORS['primary']};
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 13px;
+                font-weight: 500;
+                text-align: left;
+                padding-left: 15px;
+            }}
+            QPushButton:hover {{
+                background-color: {AppStyles.COLORS['primary_dark']};
+            }}
+        """
+        
+        inactive_style = f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {AppStyles.COLORS['text']};
+                border: none;
+                border-radius: 8px;
+                font-size: 13px;
+                text-align: left;
+                padding-left: 15px;
+            }}
+            QPushButton:hover {{
+                background-color: {AppStyles.COLORS['hover']};
+            }}
+        """
+        
+        btn.setStyleSheet(active_style if is_active else inactive_style)
+        btn.clicked.connect(lambda: self.switch_tool(tool_id))
+        
+        return btn
+    
+    def switch_tool(self, tool_id):
+        """Araç değiştir"""
+        if tool_id == self.current_tool:
+            return
+            
+        # Buton stillerini güncelle
+        for btn_id, button in self.menu_buttons.items():
+            is_active = btn_id == tool_id
+            active_style = f"""
+                QPushButton {{
+                    background-color: {AppStyles.COLORS['primary']};
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: 500;
+                    text-align: left;
+                    padding-left: 15px;
+                }}
+                QPushButton:hover {{
+                    background-color: {AppStyles.COLORS['primary_dark']};
+                }}
+            """
+            
+            inactive_style = f"""
+                QPushButton {{
+                    background-color: transparent;
+                    color: {AppStyles.COLORS['text']};
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    text-align: left;
+                    padding-left: 15px;
+                }}
+                QPushButton:hover {{
+                    background-color: {AppStyles.COLORS['hover']};
+                }}
+            """
+            
+            button.setStyleSheet(active_style if is_active else inactive_style)
+        
+        # Aracı değiştir
+        self.current_tool = tool_id
+        
+        # Başlığı güncelle ve sayfa değiştir
+        if tool_id == "video_extractor":
+            self.tool_title.setText("🎬 Video Frame Çıkarma")
+            self.content_stack.setCurrentIndex(0)  # Video extractor sayfası
+            self.statusBar().showMessage("Video Frame Çıkarma aracı aktif", 2000)
+        elif tool_id == "yolo_analyzer":
+            self.tool_title.setText("🎯 YOLO Format Analizi")
+            self.content_stack.setCurrentIndex(1)  # YOLO analyzer sayfası
+            self.statusBar().showMessage("YOLO Format Analizi aracı aktif", 2000)
+        elif tool_id == "about":
+            self.show_about()
+            # About'tan sonra önceki aracı aktif tut
+            if hasattr(self, 'previous_tool'):
+                self.switch_tool(self.previous_tool)
+            else:
+                self.switch_tool("video_extractor")
+
+    def create_video_extractor_page(self):
+        """Video extractor sayfasını oluştur"""
+        page = QWidget()
+        
+        # Ana içerik alanı (splitter ile böl)
+        content_splitter = QSplitter(Qt.Horizontal)
+        
+        # Sol panel (kontroller)
+        left_panel = self.create_left_panel()
+        content_splitter.addWidget(left_panel)
+        
+        # Sağ panel (info ve log)
+        right_panel = self.create_right_panel()
+        content_splitter.addWidget(right_panel)
+        
+        # Splitter oranları
+        content_splitter.setStretchFactor(0, 3)  # Sol panel daha geniş
+        content_splitter.setStretchFactor(1, 1)  # Sağ panel daha dar
+        
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(content_splitter)
+        
+        return page
+    
+    def create_yolo_analyzer_page(self):
+        """YOLO analyzer sayfasını oluştur"""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setSpacing(20)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # YOLO analiz araçlarını içe aktar
+        from ..ui.yolo_window import YoloAnalysisWindow
+        
+        # YOLO widget'ını oluştur ama pencere olarak değil widget olarak
+        self.yolo_widget = self.create_yolo_analysis_widget()
+        layout.addWidget(self.yolo_widget)
+        
+        return page
+    
+    def create_yolo_analysis_widget(self):
+        """YOLO analiz widget'ını oluştur"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(20)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Klasör seçimi bölümü
+        folder_group = QGroupBox("📁 Klasör Seçimi")
+        folder_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                font-size: 14px;
+                color: {AppStyles.COLORS['text']};
+                border: 2px solid {AppStyles.COLORS['border']};
+                border-radius: 8px;
+                margin-top: 10px;
+                padding-top: 10px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 10px 0 10px;
+            }}
+        """)
+        
+        folder_layout = QVBoxLayout(folder_group)
+        
+        # Klasör seçim alanı
+        folder_select_layout = QHBoxLayout()
+        
+        self.yolo_folder_input = QLineEdit()
+        self.yolo_folder_input.setPlaceholderText("YOLO .txt dosyalarının bulunduğu klasörü seçin...")
+        self.yolo_folder_input.setStyleSheet(AppStyles.get_input_style())
+        
+        self.yolo_browse_btn = QPushButton("📁 Gözat")
+        self.yolo_browse_btn.setStyleSheet(AppStyles.get_button_style())
+        self.yolo_browse_btn.clicked.connect(self.browse_yolo_folder)
+        
+        folder_select_layout.addWidget(self.yolo_folder_input)
+        folder_select_layout.addWidget(self.yolo_browse_btn)
+        folder_layout.addLayout(folder_select_layout)
+        
+        # Analiz butonu
+        self.yolo_analyze_btn = QPushButton("🎯 Analiz Et")
+        self.yolo_analyze_btn.setStyleSheet(AppStyles.get_primary_button_style())
+        self.yolo_analyze_btn.clicked.connect(self.start_yolo_analysis)
+        self.yolo_analyze_btn.setEnabled(False)
+        
+        folder_layout.addWidget(self.yolo_analyze_btn)
+        layout.addWidget(folder_group)
+        
+        # Sonuçlar bölümü
+        results_group = QGroupBox("📊 Analiz Sonuçları")
+        results_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                font-size: 14px;
+                color: {AppStyles.COLORS['text']};
+                border: 2px solid {AppStyles.COLORS['border']};
+                border-radius: 8px;
+                margin-top: 10px;
+                padding-top: 10px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 10px 0 10px;
+            }}
+        """)
+        
+        results_layout = QVBoxLayout(results_group)
+        
+        # Sonuç metni
+        self.yolo_results_text = QTextEdit()
+        self.yolo_results_text.setPlaceholderText("Analiz sonuçları burada görünecek...")
+        self.yolo_results_text.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {AppStyles.COLORS['gray_100']};
+                border: 1px solid {AppStyles.COLORS['border']};
+                border-radius: 6px;
+                padding: 10px;
+                font-family: {AppStyles.FONTS['family_mono']};
+                font-size: 12px;
+                color: {AppStyles.COLORS['text']};
+            }}
+        """)
+        self.yolo_results_text.setMinimumHeight(300)
+        
+        results_layout.addWidget(self.yolo_results_text)
+        
+        # Export butonu
+        self.yolo_export_btn = QPushButton("📄 CSV Olarak Kaydet")
+        self.yolo_export_btn.setStyleSheet(AppStyles.get_button_style())
+        self.yolo_export_btn.clicked.connect(self.export_yolo_results)
+        self.yolo_export_btn.setEnabled(False)
+        
+        results_layout.addWidget(self.yolo_export_btn)
+        layout.addWidget(results_group)
+        
+        # Folder input değişikliğini dinle
+        self.yolo_folder_input.textChanged.connect(self.on_yolo_folder_changed)
+        
+        return widget
+    
+    def browse_yolo_folder(self):
+        """YOLO klasörü seç"""
+        folder = QFileDialog.getExistingDirectory(
+            self, 
+            "YOLO Dosyalarının Bulunduğu Klasörü Seçin",
+            self.yolo_folder_input.text() or os.path.expanduser("~")
+        )
+        
+        if folder:
+            self.yolo_folder_input.setText(folder)
+    
+    def on_yolo_folder_changed(self):
+        """Klasör seçimi değiştiğinde"""
+        folder_path = self.yolo_folder_input.text().strip()
+        has_folder = bool(folder_path and os.path.exists(folder_path))
+        self.yolo_analyze_btn.setEnabled(has_folder)
+    
+    def start_yolo_analysis(self):
+        """YOLO analizi başlat"""
+        folder_path = self.yolo_folder_input.text().strip()
+        
+        if not folder_path or not os.path.exists(folder_path):
+            QMessageBox.warning(self, "Uyarı", "Lütfen geçerli bir klasör seçin!")
+            return
+        
+        try:
+            from ..core.yolo_analyzer import YoloAnalyzer
+            
+            # Analiz et
+            analyzer = YoloAnalyzer()
+            results = analyzer.analyze_folder(folder_path)
+            
+            # Hata kontrolü - eğer hiç dosya yoksa
+            if results['total_files'] == 0:
+                self.yolo_results_text.setText("Bu klasörde YOLO format (.txt) dosya bulunamadı.")
+                self.yolo_export_btn.setEnabled(False)
+                return
+            
+            # Sonuçları göster
+            output_text = f"""YOLO Format Analiz Sonuçları
+=====================================
+
+📁 Klasör: {folder_path}
+📄 Toplam Dosya: {results['total_files']}
+🎯 Toplam Nesne: {results['total_objects']}
+
+📊 SINIF İSTATİSTİKLERİ:
+"""
+            
+            # class_counts kullan (class_stats değil)
+            if results.get('class_counts'):
+                for class_id, count in sorted(results['class_counts'].items()):
+                    output_text += f"   Sınıf {class_id}: {count} nesne\n"
+            else:
+                output_text += "   Hiç nesne bulunamadı.\n"
+            
+            # Hata dosyaları varsa göster
+            if results.get('error_files'):
+                output_text += f"\n⚠️  HATA RAPORLARI ({len(results['error_files'])} dosya):\n"
+                for error_info in results['error_files']:
+                    output_text += f"   • {error_info['file']}: {error_info['error']}\n"
+            
+            output_text += f"\n📄 DOSYA DETAYLARI:\n"
+            
+            # file_details dict yapısını kullan
+            for filename, object_count in results['file_details'].items():
+                output_text += f"\n📄 {filename}:\n"
+                output_text += f"   • Nesne sayısı: {object_count}\n"
+                
+                if object_count == 0:
+                    # Hata dosyası mı kontrol et
+                    is_error_file = any(err['file'] == filename for err in results.get('error_files', []))
+                    if is_error_file:
+                        output_text += "   • Durum: Hata (yukarıda detaylar)\n"
+                    else:
+                        output_text += "   • İçerik: Boş\n"
+            
+            self.yolo_results_text.setText(output_text)
+            self.yolo_export_btn.setEnabled(True)
+            self.current_yolo_results = results
+            
+            self.statusBar().showMessage(f"Analiz tamamlandı! {results['total_files']} dosya analiz edildi.", 3000)
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", f"Analiz sırasında hata oluştu:\n{str(e)}")
+            app_logger.error(f"YOLO analiz hatası: {str(e)}")
+    
+    def export_yolo_results(self):
+        """YOLO sonuçlarını CSV olarak kaydet"""
+        if not hasattr(self, 'current_yolo_results'):
+            QMessageBox.warning(self, "Uyarı", "Önce analiz yapmanız gerekiyor!")
+            return
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "YOLO Analiz Sonuçlarını Kaydet",
+            f"yolo_analysis_{TimeUtils.get_timestamp()}.csv",
+            "CSV Dosyaları (*.csv)"
+        )
+        
+        if file_path:
+            try:
+                import csv
+                
+                with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                    writer = csv.writer(csvfile)
+                    
+                    # Başlıkları yaz
+                    writer.writerow(['Dosya Adı', 'Nesne Sayısı', 'Durum'])
+                    
+                    # Verileri yaz
+                    results = self.current_yolo_results
+                    for filename, object_count in results['file_details'].items():
+                        # Hata durumu kontrol et
+                        is_error_file = any(err['file'] == filename for err in results.get('error_files', []))
+                        status = "Hatalı" if is_error_file else ("Boş" if object_count == 0 else "Normal")
+                        
+                        writer.writerow([
+                            filename,
+                            object_count,
+                            status
+                        ])
+                    
+                    # Hata detayları ekle
+                    if results.get('error_files'):
+                        writer.writerow([])  # Boş satır
+                        writer.writerow(['HATA DETAYLARI'])
+                        writer.writerow(['Dosya Adı', 'Hata Açıklaması'])
+                        for error_info in results['error_files']:
+                            writer.writerow([error_info['file'], error_info['error']])
+                
+                QMessageBox.information(self, "Başarılı", f"Sonuçlar başarıyla kaydedildi:\n{file_path}")
+                self.statusBar().showMessage("CSV dosyası başarıyla kaydedildi!", 3000)
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Hata", f"Dosya kaydedilirken hata oluştu:\n{str(e)}")
+                app_logger.error(f"CSV kaydetme hatası: {str(e)}")
+
     def create_header(self, main_layout):
         """Başlık alanını oluştur"""
         header_layout = QHBoxLayout()
         
-        # Başlık
-        self.title_label = QLabel("🤖 AI ToolBox")
-        self.title_label.setStyleSheet(AppStyles.get_title_label_style())
-        
-        # Versiyon
-        version_label = QLabel("v1.0.0")
-        version_label.setStyleSheet(f"""
+        # Aktif araç başlığı
+        self.tool_title = QLabel("🎬 Video Frame Çıkarma")
+        self.tool_title.setStyleSheet(f"""
             QLabel {{
-                color: {AppStyles.COLORS['gray_500']};
-                font-size: 12px;
-                font-style: italic;
+                color: {AppStyles.COLORS['text']};
+                font-size: 24px;
+                font-weight: bold;
+                margin-bottom: 20px;
             }}
         """)
         
-        header_layout.addWidget(self.title_label)
+        header_layout.addWidget(self.tool_title)
         header_layout.addStretch()
-        header_layout.addWidget(version_label)
         
         main_layout.addLayout(header_layout)
     
