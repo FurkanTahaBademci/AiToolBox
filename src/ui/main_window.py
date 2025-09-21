@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QHBoxLayout, QGridLayout, QPushButton, QLabel, 
                             QLineEdit, QSpinBox, QFileDialog, QProgressBar,
                             QGroupBox, QFrame, QMessageBox, QTextEdit, QSplitter, 
-                            QComboBox, QAction, QStackedWidget)
+                            QComboBox, QAction, QStackedWidget, QCheckBox)
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap
 
@@ -87,6 +87,10 @@ class MainWindow(QMainWindow):
         # YOLO analyzer sayfası
         yolo_page = self.create_yolo_analyzer_page()
         self.content_stack.addWidget(yolo_page)
+        
+        # Image-TXT matcher sayfası
+        matcher_page = self.create_image_txt_matcher_page()
+        self.content_stack.addWidget(matcher_page)
         
         # Varsayılan olarak video frame extractor'ı göster
         self.current_tool = "video_extractor"
@@ -173,6 +177,11 @@ class MainWindow(QMainWindow):
         yolo_btn = self.create_menu_button("🎯", "YOLO Format Analizi", "yolo_analyzer", False)
         self.menu_buttons["yolo_analyzer"] = yolo_btn
         layout.addWidget(yolo_btn)
+        
+        # Image-TXT Matcher
+        matcher_btn = self.create_menu_button("🖼️", "Resim-TXT Eşleştirme", "image_txt_matcher", False)
+        self.menu_buttons["image_txt_matcher"] = matcher_btn
+        layout.addWidget(matcher_btn)
         
         # Ayırıcı
         separator = QFrame()
@@ -296,6 +305,10 @@ class MainWindow(QMainWindow):
             self.tool_title.setText("🎯 YOLO Format Analizi")
             self.content_stack.setCurrentIndex(1)  # YOLO analyzer sayfası
             self.statusBar().showMessage("YOLO Format Analizi aracı aktif", 2000)
+        elif tool_id == "image_txt_matcher":
+            self.tool_title.setText("🖼️ Resim-TXT Eşleştirme")
+            self.content_stack.setCurrentIndex(2)  # Image-TXT matcher sayfası
+            self.statusBar().showMessage("Resim-TXT Eşleştirme aracı aktif", 2000)
         elif tool_id == "about":
             self.show_about()
             # About'tan sonra önceki aracı aktif tut
@@ -345,6 +358,374 @@ class MainWindow(QMainWindow):
         
         return page
     
+    def create_image_txt_matcher_page(self):
+        """Resim-TXT eşleştirme sayfasını oluştur"""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setSpacing(20)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Image-TXT matcher widget'ını oluştur
+        self.matcher_widget = self.create_image_txt_matcher_widget()
+        layout.addWidget(self.matcher_widget)
+        
+        return page
+    
+    def create_image_txt_matcher_widget(self):
+        """Resim-TXT eşleştirme widget'ını oluştur"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(20)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Klasör seçimi bölümü
+        folder_group = QGroupBox("📁 Klasör ve Ayarlar")
+        folder_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                font-size: 14px;
+                color: {AppStyles.COLORS['text']};
+                border: 2px solid {AppStyles.COLORS['border']};
+                border-radius: 8px;
+                margin-top: 10px;
+                padding-top: 10px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 10px 0 10px;
+            }}
+        """)
+        
+        folder_layout = QVBoxLayout(folder_group)
+        
+        # Klasör seçim alanı
+        folder_select_layout = QHBoxLayout()
+        
+        self.matcher_folder_input = QLineEdit()
+        self.matcher_folder_input.setPlaceholderText("Resim ve TXT dosyalarının bulunduğu klasörü seçin...")
+        self.matcher_folder_input.setStyleSheet(AppStyles.get_input_style())
+        
+        self.matcher_browse_btn = QPushButton("📁 Gözat")
+        self.matcher_browse_btn.setStyleSheet(AppStyles.get_button_style())
+        self.matcher_browse_btn.clicked.connect(self.browse_matcher_folder)
+        
+        folder_select_layout.addWidget(self.matcher_folder_input)
+        folder_select_layout.addWidget(self.matcher_browse_btn)
+        folder_layout.addLayout(folder_select_layout)
+        
+        # Resim formatları seçimi
+        format_layout = QHBoxLayout()
+        
+        format_label = QLabel("Resim Formatları:")
+        format_label.setStyleSheet(f"""
+            QLabel {{
+                color: {AppStyles.COLORS['text']};
+                font-weight: 500;
+                font-size: 13px;
+            }}
+        """)
+        
+        self.image_formats_input = QLineEdit("jpg,jpeg,png,bmp,tiff,webp")
+        self.image_formats_input.setPlaceholderText("jpg,jpeg,png,bmp,tiff,webp")
+        self.image_formats_input.setStyleSheet(AppStyles.get_input_style())
+        self.image_formats_input.setToolTip("Virgülle ayırarak resim formatlarını girin (örn: jpg,png,bmp)")
+        
+        format_layout.addWidget(format_label)
+        format_layout.addWidget(self.image_formats_input)
+        folder_layout.addLayout(format_layout)
+        
+        # Alt dizinleri dahil et seçeneği
+        self.include_subdirs_cb = QCheckBox("Alt dizinleri de tara")
+        self.include_subdirs_cb.setChecked(True)
+        self.include_subdirs_cb.setStyleSheet(f"""
+            QCheckBox {{
+                color: {AppStyles.COLORS['text']};
+                font-size: 13px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+            }}
+        """)
+        folder_layout.addWidget(self.include_subdirs_cb)
+        
+        # Analiz ve oluşturma butonları
+        button_layout = QHBoxLayout()
+        
+        self.matcher_analyze_btn = QPushButton("🔍 Analiz Et")
+        self.matcher_analyze_btn.setStyleSheet(AppStyles.get_button_style())
+        self.matcher_analyze_btn.clicked.connect(self.analyze_image_txt_matching)
+        self.matcher_analyze_btn.setEnabled(False)
+        
+        self.matcher_create_btn = QPushButton("📄 Eksik TXT Dosyalarını Oluştur")
+        self.matcher_create_btn.setStyleSheet(AppStyles.get_primary_button_style())
+        self.matcher_create_btn.clicked.connect(self.create_missing_txt_files)
+        self.matcher_create_btn.setEnabled(False)
+        
+        button_layout.addWidget(self.matcher_analyze_btn)
+        button_layout.addWidget(self.matcher_create_btn)
+        folder_layout.addLayout(button_layout)
+        
+        layout.addWidget(folder_group)
+        
+        # Sonuçlar bölümü
+        results_group = QGroupBox("📊 Analiz Sonuçları")
+        results_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                font-size: 14px;
+                color: {AppStyles.COLORS['text']};
+                border: 2px solid {AppStyles.COLORS['border']};
+                border-radius: 8px;
+                margin-top: 10px;
+                padding-top: 10px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 10px 0 10px;
+            }}
+        """)
+        
+        results_layout = QVBoxLayout(results_group)
+        
+        # Sonuç metni
+        self.matcher_results_text = QTextEdit()
+        self.matcher_results_text.setPlaceholderText("Analiz sonuçları burada görünecek...")
+        self.matcher_results_text.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {AppStyles.COLORS['gray_100']};
+                border: 1px solid {AppStyles.COLORS['border']};
+                border-radius: 6px;
+                padding: 10px;
+                font-family: {AppStyles.FONTS['family_mono']};
+                font-size: 12px;
+                color: {AppStyles.COLORS['text']};
+            }}
+        """)
+        self.matcher_results_text.setMinimumHeight(300)
+        
+        results_layout.addWidget(self.matcher_results_text)
+        layout.addWidget(results_group)
+        
+        # Folder input değişikliğini dinle
+        self.matcher_folder_input.textChanged.connect(self.on_matcher_folder_changed)
+        
+        return widget
+    
+    def browse_matcher_folder(self):
+        """Resim-TXT eşleştirme klasörü seç"""
+        folder = QFileDialog.getExistingDirectory(
+            self, 
+            "Resim ve TXT Dosyalarının Bulunduğu Klasörü Seçin",
+            self.matcher_folder_input.text() or os.path.expanduser("~")
+        )
+        
+        if folder:
+            self.matcher_folder_input.setText(folder)
+    
+    def on_matcher_folder_changed(self):
+        """Klasör seçimi değiştiğinde"""
+        folder_path = self.matcher_folder_input.text().strip()
+        has_folder = bool(folder_path and os.path.exists(folder_path))
+        self.matcher_analyze_btn.setEnabled(has_folder)
+        
+        # Oluştur butonunu sadece analiz yapıldıktan sonra aktif et
+        if not has_folder:
+            self.matcher_create_btn.setEnabled(False)
+    
+    def analyze_image_txt_matching(self):
+        """Resim ve TXT dosyalarını analiz et"""
+        folder_path = self.matcher_folder_input.text().strip()
+        
+        if not folder_path or not os.path.exists(folder_path):
+            QMessageBox.warning(self, "Uyarı", "Lütfen geçerli bir klasör seçin!")
+            return
+        
+        try:
+            # Analiz kodunu çalıştır
+            self.run_image_txt_analysis(folder_path)
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", f"Analiz sırasında hata oluştu:\n{str(e)}")
+            app_logger.error(f"Resim-TXT analiz hatası: {str(e)}")
+    
+    def run_image_txt_analysis(self, folder_path):
+        """Resim-TXT analiz işlemini gerçekleştir"""
+        # Resim formatlarını al
+        formats_text = self.image_formats_input.text().strip()
+        if not formats_text:
+            formats_text = "jpg,jpeg,png,bmp,tiff,webp"
+        
+        image_extensions = [f".{fmt.strip().lower()}" for fmt in formats_text.split(",")]
+        include_subdirs = self.include_subdirs_cb.isChecked()
+        
+        # Dosyaları tara
+        image_files = []
+        txt_files = []
+        
+        if include_subdirs:
+            # Alt dizinleri dahil et
+            for root, dirs, files in os.walk(folder_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    file_ext = os.path.splitext(file)[1].lower()
+                    
+                    if file_ext in image_extensions:
+                        image_files.append(file_path)
+                    elif file_ext == ".txt":
+                        txt_files.append(file_path)
+        else:
+            # Sadece ana dizin
+            for file in os.listdir(folder_path):
+                if os.path.isfile(os.path.join(folder_path, file)):
+                    file_ext = os.path.splitext(file)[1].lower()
+                    file_path = os.path.join(folder_path, file)
+                    
+                    if file_ext in image_extensions:
+                        image_files.append(file_path)
+                    elif file_ext == ".txt":
+                        txt_files.append(file_path)
+        
+        # TXT dosyalarını base name'e göre organize et
+        txt_basenames = set()
+        for txt_file in txt_files:
+            base_name = os.path.splitext(os.path.basename(txt_file))[0]
+            txt_basenames.add(base_name)
+        
+        # Eksik TXT dosyalarını bul
+        missing_txt_files = []
+        matched_files = []
+        
+        for image_file in image_files:
+            base_name = os.path.splitext(os.path.basename(image_file))[0]
+            
+            if base_name in txt_basenames:
+                matched_files.append(image_file)
+            else:
+                missing_txt_files.append(image_file)
+        
+        # Sonuçları kaydet (create_missing_txt_files için)
+        self.current_analysis = {
+            'folder_path': folder_path,
+            'missing_files': missing_txt_files,
+            'matched_files': matched_files,
+            'total_images': len(image_files),
+            'total_txt': len(txt_files),
+            'include_subdirs': include_subdirs
+        }
+        
+        # Sonuçları göster
+        output_text = f"""Resim-TXT Eşleştirme Analiz Sonuçları
+====================================
+
+📁 Klasör: {folder_path}
+🔍 Tarama: {"Alt dizinler dahil" if include_subdirs else "Sadece ana dizin"}
+📷 Toplam Resim: {len(image_files)}
+📄 Toplam TXT: {len(txt_files)}
+
+✅ EŞLEŞEN DOSYALAR: {len(matched_files)}
+❌ EKSİK TXT DOSYALARI: {len(missing_txt_files)}
+
+"""
+        
+        if missing_txt_files:
+            output_text += "🔍 EKSİK TXT DOSYALARI LİSTESİ:\n"
+            for img_file in missing_txt_files[:20]:  # İlk 20'sini göster
+                rel_path = os.path.relpath(img_file, folder_path)
+                output_text += f"   • {rel_path}\n"
+            
+            if len(missing_txt_files) > 20:
+                output_text += f"   ... ve {len(missing_txt_files) - 20} dosya daha\n"
+        else:
+            output_text += "🎉 Tüm resim dosyaları için TXT dosyası mevcut!\n"
+        
+        if matched_files:
+            output_text += f"\n✅ EŞLEŞEN DOSYALAR (ilk 10):\n"
+            for img_file in matched_files[:10]:
+                rel_path = os.path.relpath(img_file, folder_path)
+                output_text += f"   • {rel_path}\n"
+            
+            if len(matched_files) > 10:
+                output_text += f"   ... ve {len(matched_files) - 10} dosya daha\n"
+        
+        self.matcher_results_text.setText(output_text)
+        
+        # Oluştur butonunu aktif et
+        self.matcher_create_btn.setEnabled(len(missing_txt_files) > 0)
+        
+        self.statusBar().showMessage(f"Analiz tamamlandı! {len(missing_txt_files)} eksik TXT dosyası bulundu.", 3000)
+    
+    def create_missing_txt_files(self):
+        """Eksik TXT dosyalarını oluştur"""
+        if not hasattr(self, 'current_analysis'):
+            QMessageBox.warning(self, "Uyarı", "Önce analiz yapmanız gerekiyor!")
+            return
+        
+        analysis = self.current_analysis
+        missing_files = analysis['missing_files']
+        
+        if not missing_files:
+            QMessageBox.information(self, "Bilgi", "Oluşturulacak eksik TXT dosyası bulunamadı!")
+            return
+        
+        # Kullanıcıdan onay al
+        reply = QMessageBox.question(
+            self, 
+            "Onay", 
+            f"{len(missing_files)} adet boş TXT dosyası oluşturulacak. Devam etmek istiyor musunuz?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply != QMessageBox.Yes:
+            return
+        
+        try:
+            created_count = 0
+            error_count = 0
+            
+            for image_file in missing_files:
+                try:
+                    # TXT dosya yolunu oluştur
+                    image_dir = os.path.dirname(image_file)
+                    base_name = os.path.splitext(os.path.basename(image_file))[0]
+                    txt_file_path = os.path.join(image_dir, f"{base_name}.txt")
+                    
+                    # Boş TXT dosyası oluştur
+                    with open(txt_file_path, 'w', encoding='utf-8') as f:
+                        f.write("")  # Boş dosya
+                    
+                    created_count += 1
+                    
+                except Exception as e:
+                    error_count += 1
+                    app_logger.error(f"TXT dosyası oluşturma hatası {image_file}: {str(e)}")
+            
+            # Sonuç mesajı
+            if error_count == 0:
+                QMessageBox.information(
+                    self, 
+                    "Başarılı", 
+                    f"✅ {created_count} adet boş TXT dosyası başarıyla oluşturuldu!"
+                )
+            else:
+                QMessageBox.warning(
+                    self, 
+                    "Kısmi Başarı", 
+                    f"✅ {created_count} dosya oluşturuldu\n❌ {error_count} dosyada hata oluştu\n\nDetaylar için log'lara bakın."
+                )
+            
+            # Yeniden analiz et
+            self.analyze_image_txt_matching()
+            
+            self.statusBar().showMessage(f"{created_count} TXT dosyası oluşturuldu!", 3000)
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", f"TXT dosyaları oluşturulürken hata oluştu:\n{str(e)}")
+            app_logger.error(f"TXT oluşturma genel hatası: {str(e)}")
+
     def create_yolo_analysis_widget(self):
         """YOLO analiz widget'ını oluştur"""
         widget = QWidget()
